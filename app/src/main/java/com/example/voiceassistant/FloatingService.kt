@@ -22,6 +22,7 @@ import android.widget.Toast
 class FloatingService : Service() {
 
     private lateinit var windowManager: WindowManager
+    private lateinit var speech: SpeechManager
     private var floatingView: ImageView? = null
     private var pulseAnimator: ObjectAnimator? = null
     private var listening = false
@@ -31,6 +32,17 @@ class FloatingService : Service() {
     override fun onCreate() {
         super.onCreate()
         startForegroundWithNotification()
+
+        speech = SpeechManager(
+            context = this,
+            onFinalText = { text -> handleCommand(text) },
+            onListening = { on -> setListeningUi(on) },
+            onProblem = { msg ->
+                setListeningUi(false)
+                toast(msg)
+            }
+        )
+
         addFloatingIcon()
     }
 
@@ -48,7 +60,12 @@ class FloatingService : Service() {
             .build()
 
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            startForeground(
+                1,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
         } else {
             startForeground(1, notification)
         }
@@ -79,12 +96,12 @@ class FloatingService : Service() {
             y = 300
         }
 
-        // ড্র্যাগ ও ট্যাপ হ্যান্ডলিং
         var startX = 0
         var startY = 0
         var touchX = 0f
         var touchY = 0f
         var moved = false
+        var downTime = 0L
 
         icon.setOnTouchListener { _, event ->
             when (event.action) {
@@ -94,6 +111,7 @@ class FloatingService : Service() {
                     touchX = event.rawX
                     touchY = event.rawY
                     moved = false
+                    downTime = System.currentTimeMillis()
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -106,7 +124,10 @@ class FloatingService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) onIconTapped(icon)
+                    if (!moved) {
+                        val pressTime = System.currentTimeMillis() - downTime
+                        if (pressTime > 600) toggleLanguage() else onIconTapped()
+                    }
                     true
                 }
                 else -> false
@@ -117,10 +138,33 @@ class FloatingService : Service() {
         floatingView = icon
     }
 
-    // আইকনে ট্যাপ করলে (মডিউল ২-এ এখানে আসল মাইক চালু হবে)
-    private fun onIconTapped(icon: ImageView) {
-        listening = !listening
+    // ট্যাপ: শোনা শুরু / বন্ধ
+    private fun onIconTapped() {
         if (listening) {
+            speech.stop()
+        } else {
+            speech.start()
+        }
+    }
+
+    // চেপে ধরে রাখলে: ভাষা বদল
+    private fun toggleLanguage() {
+        if (speech.languageTag == "bn-BD") {
+            speech.languageTag = "en-US"
+            toast("ভাষা: English")
+        } else {
+            speech.languageTag = "bn-BD"
+            toast("ভাষা: বাংলা")
+        }
+    }
+
+    // শোনার সময় আইকন লাল ও স্পন্দিত, নইলে স্বাভাবিক
+    private fun setListeningUi(on: Boolean) {
+        val icon = floatingView ?: return
+        if (listening == on) return
+        listening = on
+
+        if (on) {
             icon.backgroundTintList = ColorStateList.valueOf(Color.RED)
             pulseAnimator = ObjectAnimator.ofPropertyValuesHolder(
                 icon,
@@ -132,18 +176,27 @@ class FloatingService : Service() {
                 repeatMode = ObjectAnimator.REVERSE
                 start()
             }
-            Toast.makeText(this, "শুনছি...", Toast.LENGTH_SHORT).show()
+            toast("শুনছি...")
         } else {
             pulseAnimator?.cancel()
             icon.scaleX = 1f
             icon.scaleY = 1f
             icon.backgroundTintList = null
-            Toast.makeText(this, "মাইক বন্ধ", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // আপনার বলা কথা এখানে আসে (মডিউল ৩-৪-এ এখানে আসল কাজ হবে)
+    private fun handleCommand(text: String) {
+        toast("শুনলাম: $text")
+    }
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() {
         pulseAnimator?.cancel()
+        speech.destroy()
         floatingView?.let { windowManager.removeView(it) }
         floatingView = null
         super.onDestroy()
