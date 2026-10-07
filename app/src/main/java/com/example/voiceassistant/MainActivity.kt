@@ -20,13 +20,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // নোটিফিকেশন পারমিশন (Android 13+)
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
-
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -34,8 +27,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val info = TextView(this).apply {
-            text = "Voice Assistant - মডিউল ১\nফ্লোটিং মাইক আইকন টেস্ট"
-            textSize = 18f
+            text = "Voice Assistant - মডিউল ২\n\nআইকনে ট্যাপ = কথা শোনা\nআইকনে চেপে ধরে রাখা = ভাষা বদল (বাংলা/ইংরেজি)"
+            textSize = 17f
             gravity = Gravity.CENTER
         }
 
@@ -46,7 +39,9 @@ class MainActivity : AppCompatActivity() {
 
         val stopBtn = Button(this).apply {
             text = "ফ্লোটিং মাইক বন্ধ করুন"
-            setOnClickListener { stopService(Intent(this@MainActivity, FloatingService::class.java)) }
+            setOnClickListener {
+                stopService(Intent(this@MainActivity, FloatingService::class.java))
+            }
         }
 
         layout.addView(info)
@@ -56,7 +51,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startFloating() {
-        // অন্য অ্যাপের ওপর দেখানোর পারমিশন আছে কিনা দেখা
+        // ১. মাইক্রোফোন (ও নোটিফিকেশন) অনুমতি
+        val needed = mutableListOf<String>()
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (needed.isNotEmpty()) {
+            requestPermissions(needed.toTypedArray(), 1)
+            Toast.makeText(this, "অনুমতি দিয়ে আবার বাটন চাপুন", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // ২. অন্য অ্যাপের ওপর দেখানোর অনুমতি
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "অনুমতি দিন: অন্য অ্যাপের ওপর দেখানো", Toast.LENGTH_LONG).show()
             startActivity(
@@ -67,6 +78,8 @@ class MainActivity : AppCompatActivity() {
             )
             return
         }
+
+        // ৩. সার্ভিস চালু
         ContextCompat.startForegroundService(this, Intent(this, FloatingService::class.java))
     }
 }
